@@ -90,6 +90,15 @@ public class Attendance {
 		this.createdAt = createdAt;
 		this.updatedAt = updatedAt;
 	}
+	
+	
+
+	public Attendance(Student student, Date day, Boolean isActive) {
+		super();
+		this.student = student;
+		this.day = day;
+		this.isActive = isActive;
+	}
 
 	public Attendance() {
 		super();

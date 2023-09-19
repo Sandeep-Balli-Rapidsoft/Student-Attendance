@@ -1,6 +1,7 @@
 package com.service;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.text.ParseException;
@@ -21,6 +22,7 @@ import com.dao.AttendanceDao;
 import com.dto.AttendanceDTO;
 import com.entity.Attendance;
 import com.entity.Student;
+import com.helper.Helper;
 import com.util.Response;
 
 @Service
@@ -99,45 +101,47 @@ public class AttendanceService {
 		}
 	}
 
-	public Response<?> getWeekData() throws ParseException {
+	public ByteArrayInputStream exportToExcel() throws ParseException {
 		Date date = new Date();
 		SimpleDateFormat sdf = new SimpleDateFormat("dd-MM-yyyy");
-		List<Date> weekList = getWeekDates(date);
-		
-		Map<Student, HashMap<Date, Boolean>> attendanceMap = new HashMap<>();
-		
-		for(Date dateObj : weekList) {
-			System.out.println(sdf.format(dateObj));
-		}
-		
+
 		String fromDate = "15-09-2023";
 		String toDate = "18-09-2023";
-		
+
 		List<Attendance> list = this.attendanceDao.getWeekData(sdf.parse(fromDate), sdf.parse(toDate));
-		System.out.println("start");
-		for(Attendance attendance : list) {
-			
-			System.out.println("before map");
-			
-			if(attendanceMap.containsKey(attendance.getStudent())) {
-				Map<Date, Boolean> map = new HashMap<>();
-				map.put(attendance.getDay(), attendance.getIsActive());
-				attendanceMap.put(attendance.getStudent(), (HashMap<Date, Boolean>) map);
-			}
-			
-			
+
+		// Create a map to group attendance data by student and date
+		Map<Student, Map<Date, Boolean>> groupedAttendance = new HashMap<>();
+
+		for (Attendance attendance : list) {
+			Student student = attendance.getStudent();
+			Date attendanceDate = attendance.getDay();
+			Boolean isActive = attendance.getIsActive();
+
+			// Create a student entry if it doesn't exist
+			groupedAttendance.putIfAbsent(student, new HashMap<>());
+
+			// Add attendance data to the map
+			groupedAttendance.get(student).put(attendanceDate, isActive);
 		}
-		
-		for(Entry<Student, HashMap<Date, Boolean>> mp : attendanceMap.entrySet()) {
-			System.out.println("Student: " + mp.getKey().getName());
-			Map<Date, Boolean> map = mp.getValue();
-			for(Entry<Date, Boolean> obj : map.entrySet()) {
-				System.out.println("Date: " + obj.getKey());
-				System.out.println("Status: " + obj.getValue());
-			}
+
+		// Convert the map to a list of objects containing grouped data
+		List<Attendance> exportDataList = new ArrayList<>();
+		for (Map.Entry<Student, Map<Date, Boolean>> entry : groupedAttendance.entrySet()) {
+			Student student = entry.getKey();
+			Map<Date, Boolean> studentAttendance = entry.getValue();
+
+			// Create an Attendance object with grouped data
+			Attendance exportData = new Attendance();
+			exportData.setStudent(student);
+//			exportData.setIsActive(studentAttendance); To Be done
+			exportDataList.add(exportData);
 		}
-		System.out.println("after map");
-		return new Response<>(null, null, null);
+
+		// Pass the list of grouped data to the helper method
+		ByteArrayInputStream byteArrayInputStream = Helper.dataToExcelInThroughHashMap(exportDataList);
+
+		return byteArrayInputStream;
 	}
 
 	public List<Date> getWeekDates(Date date) {
