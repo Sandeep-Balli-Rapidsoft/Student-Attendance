@@ -6,13 +6,24 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.WeekFields;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -20,6 +31,7 @@ import org.springframework.stereotype.Service;
 
 import com.dao.AttendanceDao;
 import com.dto.AttendanceDTO;
+import com.dto.ExportAttendanceDto;
 import com.entity.Attendance;
 import com.entity.Student;
 import com.helper.Helper;
@@ -101,50 +113,7 @@ public class AttendanceService {
 		}
 	}
 
-	public ByteArrayInputStream exportToExcel() throws ParseException {
-		Date date = new Date();
-		SimpleDateFormat sdf = new SimpleDateFormat("dd-MM-yyyy");
-
-		String fromDate = "15-09-2023";
-		String toDate = "18-09-2023";
-
-		List<Attendance> list = this.attendanceDao.getWeekData(sdf.parse(fromDate), sdf.parse(toDate));
-
-		// Create a map to group attendance data by student and date
-		Map<Student, Map<Date, Boolean>> groupedAttendance = new HashMap<>();
-
-		for (Attendance attendance : list) {
-			Student student = attendance.getStudent();
-			Date attendanceDate = attendance.getDay();
-			Boolean isActive = attendance.getIsActive();
-
-			// Create a student entry if it doesn't exist
-			groupedAttendance.putIfAbsent(student, new HashMap<>());
-
-			// Add attendance data to the map
-			groupedAttendance.get(student).put(attendanceDate, isActive);
-		}
-
-		// Convert the map to a list of objects containing grouped data
-		List<Attendance> exportDataList = new ArrayList<>();
-		for (Map.Entry<Student, Map<Date, Boolean>> entry : groupedAttendance.entrySet()) {
-			Student student = entry.getKey();
-			Map<Date, Boolean> studentAttendance = entry.getValue();
-
-			// Create an Attendance object with grouped data
-			Attendance exportData = new Attendance();
-			exportData.setStudent(student);
-//			exportData.setIsActive(studentAttendance); To Be done
-			exportDataList.add(exportData);
-		}
-
-		// Pass the list of grouped data to the helper method
-		ByteArrayInputStream byteArrayInputStream = Helper.dataToExcelInThroughHashMap(exportDataList);
-
-		return byteArrayInputStream;
-	}
-
-	public List<Date> getWeekDates(Date date) {
+	public List<Date> getDatesList(Date date) {
 		List<Date> datesList = new ArrayList();
 		Calendar calender = Calendar.getInstance();
 		calender.setTime(date);
@@ -157,4 +126,68 @@ public class AttendanceService {
 		}
 		return datesList;
 	}
+
+	public List<LocalDate> getAllDatesList1(LocalDate start, LocalDate end) {
+
+		long numOfDays = ChronoUnit.DAYS.between(start, end) + 1;
+		List<LocalDate> listOfDates = Stream.iterate(start, date -> date.plusDays(1)).limit(numOfDays)
+				.collect(Collectors.toList());
+
+		return listOfDates;
+	}
+
+	public ByteArrayInputStream getAllDatesList(LocalDate start, LocalDate end) throws ParseException, IOException {
+		   List<LocalDate> listOfDates = getAllDatesList1(start, end);
+
+		    SimpleDateFormat sdf = new SimpleDateFormat("dd-MM-yyyy");
+
+		    Date startDate = convertLocalDateToDate(start);
+		    Date endDate = convertLocalDateToDate(end);
+
+		    List<Attendance> list = this.attendanceDao.getWeekData(startDate, endDate);
+
+		    Map<String, Map<String, Boolean>> attendanceDetails = new HashMap<>();
+			List<Attendance> getDataDateToDate = this.attendanceDao.getWeekData(startDate, endDate);
+
+			for (Attendance obj : getDataDateToDate) {
+			    String studentName = obj.getStudent().getName();
+
+			    if (!attendanceDetails.containsKey(studentName)) {
+			        
+			        Map<String, Boolean> addDetails = new HashMap<>();
+			        attendanceDetails.put(studentName, addDetails);
+			    }
+
+			    Map<String, Boolean> innerMap = attendanceDetails.get(studentName);
+			    String format = sdf.format(obj.getDay());
+			    innerMap.put(format, obj.getIsActive());
+			}
+			
+			String[] Headers = new String[listOfDates.size() + 1];
+			Headers[0] = "name";
+			for(int i = 1; i < listOfDates.size(); i++) {
+				Headers[i] = listOfDates.get(i - 1).toString();
+			}
+			
+			for(int i = 1; i < Headers.length; i++) {
+				System.out.println(Headers[i]);
+			}
+			
+			ByteArrayInputStream res = Helper.dataToExcel(attendanceDetails, Headers);
+			
+		    return res;
+	}
+
+	public static Date convertLocalDateToDate(LocalDate localDate) {
+		// Step 1: Convert Loca lDate to LocalDateTime (add midnight time)
+		LocalDateTime localDateTime = localDate.atStartOfDay();
+
+		// Step 2: Convert LocalDateTime to ZonedDateTime (specify a time zone)
+		ZoneId zoneId = ZoneId.systemDefault(); // You can change this to your desired time zone
+		ZonedDateTime zonedDateTime = localDateTime.atZone(zoneId);
+
+		// Step 3: Convert ZonedDateTime to java.util.Date
+		return Date.from(zonedDateTime.toInstant());
+	}
+
 }
